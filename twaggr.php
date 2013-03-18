@@ -3,19 +3,12 @@
 /*
 Plugin Name: Twaggr
 Description: Aggregate twitter streams. Store formatted HTML.
-Version: 1.0
+Version: 1.1
 Author: Ethan
-Author URI: http://www.overit.com
+Author URI: http://www.ethancodes.com
+
+Your important functions are twagger_fetch() and twagger_display()
 */
-
-/*
- * Twaggr
- *
- * Aggregate twitter streams. Store formatted HTML.
- *
- * Your important functions are twagger_fetch() and twagger_display()
- */
-
 
 date_default_timezone_set('America/New_York');
 
@@ -33,7 +26,7 @@ function twaggr_load_config($f = 'config.txt') {
 			if (substr($c, 0, 1) != '@') {
 				$c = '@' . $c;
 			}
-			$usernames[] = $c;
+			$usernames[] = trim($c);
 		}
 	}
 	
@@ -59,7 +52,11 @@ function twaggr_get_tweets($username, $num = 10) {
 	$json = curl_exec($ch);
 	curl_close($ch);
 	
+	if ($json == '') return array();
+	
 	$decoded = json_decode($json);
+	
+	if (!$decoded) return array();
 	
 	foreach ($decoded->results as $result) {
 		$key = strtotime($result->created_at) . '_' . $result->id_str;
@@ -127,13 +124,21 @@ function twaggr_fetch($num = 10, $verbose = false) {
 	$all_tweets = array();
 
 	$path = twaggr_path();
+	$p = explode("/", $path);
+	$upload_path = implode("/", array_slice($p, 0, count($p) - 2)) . '/uploads';
 
 	$usernames = twaggr_load_config($path . '/config.txt');
+	
+	if ($verbose) {
+		echo '<pre>'; var_dump($usernames); echo '</pre>';
+	}
+	
 	foreach ($usernames as $username) {
 		$tweets = twaggr_get_tweets($username, $num);
 		foreach ($tweets as $key => $tweet) {
 			$all_tweets[$key] = $tweet;
 		}
+		sleep(1); // let's not piss off twitter
 	}
 	
 	if (count($all_tweets) == 0) {
@@ -141,8 +146,14 @@ function twaggr_fetch($num = 10, $verbose = false) {
 		return false;
 	}
 	
-	ksort($all_tweets);
+	krsort($all_tweets);
 	if ($verbose) echo 'Got ' . count($all_tweets) . ' tweets... ';
+	
+	if ($verbose) {
+		echo '<pre>';
+		var_dump($all_tweets);
+		echo '</pre>';
+	}
 	
 	$tweets = array_slice($all_tweets, 0, $num);
 	if ($verbose) echo 'Keeping ' . count($tweets) . ' of them... ';
@@ -150,17 +161,24 @@ function twaggr_fetch($num = 10, $verbose = false) {
 	$html = twaggr_format_html($tweets);
 	if ($verbose) echo 'Outputting as HTML... ';
 	
-	file_put_contents($path . '/cache.html', $html);
-	if ($verbose) echo chr(10) . 'Saved to ' . $path . '/cache.html' . chr(10);
+	file_put_contents($upload_path . '/twaggr_cache.html', $html);
+	if ($verbose) echo chr(10) . 'Saved to ' . $upload_path . '/twaggr_cache.html' . chr(10);
 }
 
 
 /*
  * Load the cache HTML.
+ * @param string $no_tweets_msg
  */
-function twaggr_display() {
+function twaggr_display($no_tweets_msg = 'Sorry, no tweets at this time.') {
 	$path = twaggr_path();
-	return file_get_contents($path . '/cache.html');
+	$p = explode("/", $path);
+	$upload_path = implode("/", array_slice($p, 0, count($p) - 2)) . '/uploads';
+	if (!file_exists($upload_path . '/twaggr_cache.html')) return $no_tweets_msg;
+
+	$tweets = file_get_contents($upload_path . '/twaggr_cache.html');
+	if ($tweets == '') return $no_tweets_msg;
+	return $tweets;
 }
 
 
@@ -169,7 +187,9 @@ function twaggr_path() {
 }
 
 
+if (function_exists('add_shortcode')) {
 function twaggr_shortcode( $atts ){
  return twaggr_display();
 }
 add_shortcode( 'twaggr', 'twaggr_shortcode' );
+}
